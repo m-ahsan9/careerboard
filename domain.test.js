@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {validateJob,parseBackup,filterJobs,getStats} from './domain.js';
+const job = (overrides = {}) => ({id:'one',company:'Orbit',role:'Frontend Developer',location:'Remote',notes:'Portfolio review',date:'2026-10-10',stage:'Applied',...overrides});
+test('validation trims fields and generates missing IDs',() => { const result = validateJob(job({company:' Orbit ',id:''})); assert.equal(result.company,'Orbit'); assert.ok(result.id); });
+test('rejects invalid dates, stages, missing fields and oversized notes',() => { for (const invalid of [{date:'2026-02-30'},{stage:'Unknown'},{company:''},{role:null},{notes:'x'.repeat(2001)}]) assert.throws(() => validateJob(job(invalid))); });
+test('search combines text and stage without mutating original order',() => { const jobs = [job(),job({id:'two',company:'Bloom',stage:'Interview',date:'2026-10-12'})]; assert.deepEqual(filterJobs(jobs,' REMOTE ','Interview').map(j => j.id),['two']); assert.equal(filterJobs(jobs)[0].id,'two'); assert.equal(jobs[0].id,'one'); assert.equal(filterJobs(jobs,'','All','company')[0].company,'Bloom'); assert.equal(filterJobs(jobs,'','All','oldest')[0].id,'one'); });
+test('statistics distinguish active applications from offers and saved jobs',() => { assert.deepEqual(getStats([job(),job({stage:'Interview'}),job({stage:'Offer'}),job({stage:'Saved'})]),{total:4,active:2,interviews:1,offers:1}); assert.deepEqual(getStats([]),{total:0,active:0,interviews:0,offers:0}); });
+test('backup round trip preserves data',() => { const jobs = [job()]; assert.deepEqual(parseBackup(JSON.stringify({version:1,jobs})),jobs); });
+test('invalid imports and duplicate IDs are rejected before replacing data',() => { for (const value of ['oops',JSON.stringify({version:2,jobs:[]}),JSON.stringify({version:1,jobs:[job(),job()]}),JSON.stringify({version:1,jobs:[job({stage:'Bad'})]})]) assert.throws(() => parseBackup(value)); });
+test('user supplied markup remains plain text in the data model',() => { assert.equal(validateJob(job({company:'<img src=x onerror=alert(1)>'})).company,'<img src=x onerror=alert(1)>'); });
